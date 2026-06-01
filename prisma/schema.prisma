@@ -1,0 +1,212 @@
+// ============================================================
+//  Ori — Sistema de Gestión Inteligente de Turnos
+//  schema.prisma — Modelo de datos (Iteración 1 / CORE)
+//
+//  Traducción del DER a Prisma. Genera, vía `prisma migrate`,
+//  el esquema PostgreSQL con su integridad referencial (CA-12).
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ------------------------------------------------------------
+//  Enums
+//  El ciclo de vida del turno (RN-01) se persiste como enum.
+//  El patrón State vive en el código; la base solo guarda
+//  en qué estado está el turno.
+// ------------------------------------------------------------
+enum EstadoTurno {
+  PENDIENTE
+  CONFIRMADO
+  CANCELADO
+  RECHAZADO
+  COMPLETADO
+}
+
+// Visibilidad del precio en el portal público (RN-04, RN-05).
+enum VisibilidadPrecio {
+  PUBLICO     // muestra el precio
+  OCULTO      // muestra "Consultá precio"
+  A_CONSULTAR // muestra "A consultar"
+}
+
+// ------------------------------------------------------------
+//  PROFESIONAL
+//  Existe desde la iteración 1 aunque hoy haya uno solo:
+//  es la costura que habilita multi-profesional a futuro.
+//  Casi todas las entidades cuelgan de él.
+// ------------------------------------------------------------
+model Profesional {
+  id                    String   @id @default(uuid()) @db.Uuid
+  nombre                String
+  email                 String   @unique
+  passwordHash          String   @map("password_hash") // cifrado con bcrypt (CA-11)
+  maxTurnosSimultaneos  Int      @default(1) @map("max_turnos_simultaneos") // RN-03
+
+  // Relaciones (un profesional tiene muchos de cada uno)
+  servicios       Servicio[]
+  disponibilidad  Disponibilidad[]
+  bloqueos        BloqueoFecha[]
+  turnos          Turno[]
+  configuracion   ConfiguracionSistema?
+
+  @@map("profesional")
+}
+
+// ------------------------------------------------------------
+//  CONFIGURACION_SISTEMA
+//  Relación 1:1 con Profesional. Parámetros operativos.
+// ------------------------------------------------------------
+model ConfiguracionSistema {
+  id                    String   @id @default(uuid()) @db.Uuid
+  profesionalId         String   @unique @map("profesional_id") @db.Uuid // 1:1
+  intervaloTurnosMin    Int      @default(30) @map("intervalo_turnos_min")    // RN-24
+  ventanaReservaDias    Int      @default(30) @map("ventana_reserva_dias")    // RN-18
+  horasAntesRecordatorio Int     @default(24) @map("horas_antes_recordatorio") // RN-06
+  porcentajeDescCumple  Int      @default(25) @map("porcentaje_desc_cumple")  // RN-08
+
+  profesional Profesional @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+
+  @@map("configuracion_sistema")
+}
+
+// ------------------------------------------------------------
+//  SERVICIO_CATEGORIA
+//  Agrupa servicios (Colorimetría, Peinados, Maquillaje, Cortes).
+// ------------------------------------------------------------
+model ServicioCategoria {
+  id        String     @id @default(uuid()) @db.Uuid
+  nombre    String
+
+  servicios Servicio[]
+
+  @@map("servicio_categoria")
+}
+
+// ------------------------------------------------------------
+//  SERVICIO
+//  Duración estimada y precio con visibilidad configurable.
+// ------------------------------------------------------------
+model Servicio {
+  id                String            @id @default(uuid()) @db.Uuid
+  profesionalId     String            @map("profesional_id") @db.Uuid
+  categoriaId       String?           @map("categoria_id") @db.Uuid // opcional
+  nombre            String
+  duracionMin       Int               @map("duracion_min")
+  precio            Decimal?          @db.Decimal(10, 2) // nullable: "a consultar" (RN-05)
+  visibilidadPrecio VisibilidadPrecio @default(PUBLICO) @map("visibilidad_precio")
+  activo            Boolean           @default(true) // solo activos en el portal (RF05.2, RN-12)
+
+  profesional    Profesional        @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+  categoria      ServicioCategoria? @relation(fields: [categoriaId], references: [id])
+  turnoServicios TurnoServicio[]
+
+  @@index([profesionalId])
+  @@map("servicio")
+}
+
+// ------------------------------------------------------------
+//  DISPONIBILIDAD
+//  Una fila por franja horaria. diaSemana 0-6 (0 = domingo).
+//  Permite días partidos (ej: miércoles 9-12 y 14-18 = 2 filas).
+// ------------------------------------------------------------
+model Disponibilidad {
+  id            String   @id @default(uuid()) @db.Uuid
+  profesionalId String   @map("profesional_id") @db.Uuid
+  diaSemana     Int      @map("dia_semana") // 0=domingo … 6=sábado
+  horaInicio    DateTime @map("hora_inicio") @db.Time // RN-23: fin posterior a inicio
+  horaFin       DateTime @map("hora_fin") @db.Time
+
+  profesional Profesional @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+
+  @@index([profesionalId, diaSemana])
+  @@map("disponibilidad")
+}
+
+// ------------------------------------------------------------
+//  BLOQUEO_FECHA
+//  Rangos no disponibles (vacaciones, eventos). RF-02.3
+// ------------------------------------------------------------
+model BloqueoFecha {
+  id            String   @id @default(uuid()) @db.Uuid
+  profesionalId String   @map("profesional_id") @db.Uuid
+  fechaInicio   DateTime @map("fecha_inicio") @db.Date
+  fechaFin      DateTime @map("fecha_fin") @db.Date
+  motivo        String?
+
+  profesional Profesional @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+
+  @@index([profesionalId])
+  @@map("bloqueo_fecha")
+}
+
+// ------------------------------------------------------------
+//  CLIENTE
+//  El teléfono identifica de forma única (RN-16, RN-17),
+//  por eso es UNIQUE.
+// ------------------------------------------------------------
+model Cliente {
+  id                 String    @id @default(uuid()) @db.Uuid
+  nombre             String
+  telefono           String    @unique // normalizado (RN-17)
+  email              String?
+  fechaNacimiento    DateTime? @map("fecha_nacimiento") @db.Date // para saludo de cumpleaños
+  esHabitual         Boolean   @default(false) @map("es_habitual")
+  aceptaPromociones  Boolean   @default(false) @map("acepta_promociones") // RF04.4
+
+  turnos Turno[]
+
+  @@map("cliente")
+}
+
+// ------------------------------------------------------------
+//  TURNO  (entidad central del CORE)
+//  Un turno se asocia a un único cliente (RN-15).
+//  duracionMin se persiste calculada (RN-14).
+// ------------------------------------------------------------
+model Turno {
+  id            String      @id @default(uuid()) @db.Uuid
+  profesionalId String      @map("profesional_id") @db.Uuid
+  clienteId     String      @map("cliente_id") @db.Uuid // RN-15
+  fechaHora     DateTime    @map("fecha_hora") // inicio del turno
+  duracionMin   Int         @map("duracion_min") // calculada (RN-14)
+  estado        EstadoTurno @default(PENDIENTE) // RN-01
+  observaciones String?     // detalle del servicio realizado (RN-22)
+  googleEventId String?     @map("google_event_id") // ID del evento en Google Calendar (RF-09); null si aún no sincronizado
+  creadoEn      DateTime    @default(now()) @map("creado_en")
+
+  profesional    Profesional     @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
+  cliente        Cliente         @relation(fields: [clienteId], references: [id])
+  turnoServicios TurnoServicio[]
+
+  // Índice clave para la validación de superposición (RN-03):
+  // las consultas de solapamiento filtran por profesional y fecha.
+  @@index([profesionalId, fechaHora])
+  @@map("turno")
+}
+
+// ------------------------------------------------------------
+//  TURNO_SERVICIO
+//  Tabla intermedia del muchos-a-muchos Turno <-> Servicio.
+//  Un turno puede incluir varios servicios (ej: Corte + Color).
+//  duracionAplicadaMin congela la duración al momento del turno:
+//  si el servicio cambia de duración luego, los turnos viejos
+//  conservan la duración con la que se calcularon.
+// ------------------------------------------------------------
+model TurnoServicio {
+  id                  String @id @default(uuid()) @db.Uuid
+  turnoId             String @map("turno_id") @db.Uuid
+  servicioId          String @map("servicio_id") @db.Uuid
+  duracionAplicadaMin Int    @map("duracion_aplicada_min")
+
+  turno    Turno    @relation(fields: [turnoId], references: [id], onDelete: Cascade)
+  servicio Servicio @relation(fields: [servicioId], references: [id])
+
+  @@unique([turnoId, servicioId]) // un servicio no se repite en el mismo turno
+  @@map("turno_servicio")
+}
