@@ -70,6 +70,10 @@ export class Turno {
     return this.id;
   }
 
+  get getProfesionalId(): string {
+    return this.profesionalId;
+  }
+
   get getFechaHora(): Date {
     return this.fechaHora;
   }
@@ -77,4 +81,5 @@ export class Turno {
   get getDuracionMin(): number {
     return this.duracionMin;
   }
+
 }
