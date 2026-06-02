@@ -82,4 +82,12 @@ export class Turno {
     return this.duracionMin;
   }
 
+  get getClienteId(): string {
+    return this.clienteId;
+  }
+
+  get getObservaciones(): string | undefined {
+    return this.observaciones;
+  }
+
 }

@@ -12,6 +12,7 @@ export class ReglaSuperposicion implements ReglaValidacion {
 
   async validar(turno: Turno): Promise<Resultado> {
     const solapados = await this.repo.buscarSolapados(
+      turno.getProfesionalId,
       turno.getFechaHora,
       turno.getDuracionMin,
     );
