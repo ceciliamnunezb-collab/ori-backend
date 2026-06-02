@@ -13,6 +13,8 @@ import { ReglaFechaNoPasada } from './domain/validaciones/regla-fecha-no-pasada'
 import { ReglaVentanaReserva } from './domain/validaciones/regla-ventana-reserva';
 import { ReglaSuperposicion } from './domain/validaciones/regla-superposicion';
 import { ITurnoRepository } from './domain/puertos/turno-repository.port';
+import { ReglaDisponibilidad } from './domain/validaciones/regla-disponibilidad';
+import { IDisponibilidadRepository } from './domain/puertos/disponibilidad-repository.port';
 
 @Module({
   controllers: [TurnosController],
@@ -20,14 +22,18 @@ import { ITurnoRepository } from './domain/puertos/turno-repository.port';
     PrismaService,
     {
       provide: ValidadorTurno,
-      useFactory: (repo: ITurnoRepository) => {
+      useFactory: (
+        repoTurno: ITurnoRepository,
+        repoDisponibilidad: IDisponibilidadRepository,
+      ) => {
         return new ValidadorTurno([
           new ReglaFechaNoPasada(),
           new ReglaVentanaReserva(30),
-          new ReglaSuperposicion(repo, 2),
+          new ReglaSuperposicion(repoTurno, 2),
+          new ReglaDisponibilidad(repoDisponibilidad),
         ]);
       },
-      inject: ['ITurnoRepository'],
+      inject: ['ITurnoRepository', 'IDisponibilidadRepository'],
     },
     CrearTurnoUseCase,
 
