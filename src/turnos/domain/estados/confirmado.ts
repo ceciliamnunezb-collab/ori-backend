@@ -3,6 +3,7 @@ import { EstadoTurno } from './estado-turno';
 import { Turno } from '../turno.entity';
 import { Cancelado } from './cancelado';
 import { Completado } from './completado';
+import { Ausente } from './ausente';
 import { TransicionInvalidaError } from '../errors/transicion-invalida.error';
 
 export class Confirmado implements EstadoTurno {
@@ -19,8 +20,14 @@ export class Confirmado implements EstadoTurno {
     turno.cambiarEstado(new Cancelado());
   }
 
+  // Iteración 2: se completa al registrar el cobro (RF-03.10)
   completar(turno: Turno): void {
     turno.cambiarEstado(new Completado());
+  }
+
+  // Iteración 2: el cliente no se presentó (RN-31)
+  registrarInasistencia(turno: Turno): void {
+    turno.cambiarEstado(new Ausente());
   }
 
   // --- transiciones inválidas desde Confirmado ---

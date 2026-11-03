@@ -1,12 +1,19 @@
 // src/turnos/turnos.module.ts
 import { Module } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 
 import { CrearTurnoUseCase } from './application/crear-turno.use-case';
+import {
+  CancelarTurnoUseCase,
+  ConfirmarTurnoUseCase,
+  RechazarTurnoUseCase,
+  RegistrarInasistenciaUseCase,
+  VALIDADOR_INASISTENCIA,
+} from './application/transiciones-turno.use-case';
 import { ValidadorTurno } from './domain/validaciones/validador-turno';
 
 import { PrismaTurnoRepository } from './infrastructure/prisma-turno.repository';
 import { PrismaDisponibilidadRepository } from './infrastructure/prisma-disponibilidad.repository';
+import { PrismaServicioRepository } from './infrastructure/prisma-servicio.repository';
 
 import { TurnosController } from './turnos.controller';
 import { ReglaFechaNoPasada } from './domain/validaciones/regla-fecha-no-pasada';
@@ -15,11 +22,13 @@ import { ReglaSuperposicion } from './domain/validaciones/regla-superposicion';
 import { ITurnoRepository } from './domain/puertos/turno-repository.port';
 import { ReglaDisponibilidad } from './domain/validaciones/regla-disponibilidad';
 import { IDisponibilidadRepository } from './domain/puertos/disponibilidad-repository.port';
+import { ValidadorCierre } from './domain/cierre/validador-cierre';
+import { ReglaTurnoConfirmado } from './domain/cierre/regla-turno-confirmado';
+import { ReglaHorarioAlcanzado } from './domain/cierre/regla-horario-alcanzado';
 
 @Module({
   controllers: [TurnosController],
   providers: [
-    PrismaService,
     {
       provide: ValidadorTurno,
       useFactory: (
@@ -35,7 +44,20 @@ import { IDisponibilidadRepository } from './domain/puertos/disponibilidad-repos
       },
       inject: ['ITurnoRepository', 'IDisponibilidadRepository'],
     },
+    // Iteración 2: reglas para registrar la inasistencia (RN-26)
+    {
+      provide: VALIDADOR_INASISTENCIA,
+      useFactory: () =>
+        new ValidadorCierre([
+          new ReglaTurnoConfirmado(),
+          new ReglaHorarioAlcanzado(),
+        ]),
+    },
     CrearTurnoUseCase,
+    ConfirmarTurnoUseCase,
+    CancelarTurnoUseCase,
+    RechazarTurnoUseCase,
+    RegistrarInasistenciaUseCase,
 
     // Traducción interfaz -> clase concreta.
     // "cuando alguien pida 'ITurnoRepository', dale un PrismaTurnoRepository"
@@ -47,6 +69,12 @@ import { IDisponibilidadRepository } from './domain/puertos/disponibilidad-repos
       provide: 'IDisponibilidadRepository',
       useClass: PrismaDisponibilidadRepository,
     },
+    {
+      provide: 'IServicioRepository',
+      useClass: PrismaServicioRepository,
+    },
   ],
+  // Los módulos de la Iteración 2 trabajan sobre los mismos turnos
+  exports: ['ITurnoRepository'],
 })
 export class TurnosModule {}

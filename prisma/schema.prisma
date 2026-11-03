@@ -1,6 +1,6 @@
 // ============================================================
 //  Ori — Sistema de Gestión Inteligente de Turnos
-//  schema.prisma — Modelo de datos (Iteración 1 / CORE)
+//  schema.prisma — Modelo de datos (Iteraciones 1 y 2)
 //
 //  Traducción del DER a Prisma. Genera, vía `prisma migrate`,
 //  el esquema PostgreSQL con su integridad referencial (CA-12).
@@ -26,6 +26,7 @@ enum EstadoTurno {
   CANCELADO
   RECHAZADO
   COMPLETADO
+  AUSENTE // Iteración 2: el cliente no se presentó (RN-31)
 }
 
 // Visibilidad del precio en el portal público (RN-04, RN-05).
@@ -33,6 +34,18 @@ enum VisibilidadPrecio {
   PUBLICO     // muestra el precio
   OCULTO      // muestra "Consultá precio"
   A_CONSULTAR // muestra "A consultar"
+}
+
+// Medios de pago admitidos (RN-27). Iteración 2.
+enum MedioPago {
+  EFECTIVO
+  TRANSFERENCIA
+}
+
+// Estado de una notificación híbrida (RF-08.5). Iteración 2.
+enum EstadoNotificacion {
+  PENDIENTE
+  ENVIADA
 }
 
 // ------------------------------------------------------------
@@ -101,6 +114,7 @@ model Servicio {
   precio            Decimal?          @db.Decimal(10, 2) // nullable: "a consultar" (RN-05)
   visibilidadPrecio VisibilidadPrecio @default(PUBLICO) @map("visibilidad_precio")
   activo            Boolean           @default(true) // solo activos en el portal (RF05.2, RN-12)
+  diasSeguimiento   Int?              @map("dias_seguimiento") // días hasta el seguimiento post-servicio (RF-01.3, RN-07)
 
   profesional    Profesional        @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
   categoria      ServicioCategoria? @relation(fields: [categoriaId], references: [id])
@@ -159,7 +173,8 @@ model Cliente {
   esHabitual         Boolean   @default(false) @map("es_habitual")
   aceptaPromociones  Boolean   @default(false) @map("acepta_promociones") // RF04.4
 
-  turnos Turno[]
+  turnos         Turno[]
+  notificaciones Notificacion[]
 
   @@map("cliente")
 }
@@ -178,11 +193,14 @@ model Turno {
   estado        EstadoTurno @default(PENDIENTE) // RN-01
   observaciones String?     // detalle del servicio realizado (RN-22)
   googleEventId String?     @map("google_event_id") // ID del evento en Google Calendar (RF-09); null si aún no sincronizado
+  requiereSeguimiento Boolean @default(false) @map("requiere_seguimiento") // RN-22 (Iteración 2)
   creadoEn      DateTime    @default(now()) @map("creado_en")
 
   profesional    Profesional     @relation(fields: [profesionalId], references: [id], onDelete: Cascade)
   cliente        Cliente         @relation(fields: [clienteId], references: [id])
   turnoServicios TurnoServicio[]
+  cobro          Cobro?          // 0..1: solo los turnos completados tienen cobro (Iteración 2)
+  notificaciones Notificacion[]
 
   // Índice clave para la validación de superposición (RN-03):
   // las consultas de solapamiento filtran por profesional y fecha.
@@ -203,10 +221,80 @@ model TurnoServicio {
   turnoId             String @map("turno_id") @db.Uuid
   servicioId          String @map("servicio_id") @db.Uuid
   duracionAplicadaMin Int    @map("duracion_aplicada_min")
+  precioAplicado      Decimal? @map("precio_aplicado") @db.Decimal(10, 2) // precio congelado al cobrar (Iteración 2)
 
   turno    Turno    @relation(fields: [turnoId], references: [id], onDelete: Cascade)
   servicio Servicio @relation(fields: [servicioId], references: [id])
 
   @@unique([turnoId, servicioId]) // un servicio no se repite en el mismo turno
   @@map("turno_servicio")
+}
+
+// ============================================================
+//  ITERACIÓN 2 — Cierre del ciclo del turno
+// ============================================================
+
+// ------------------------------------------------------------
+//  COBRO
+//  Liquida un turno atendido. 1:1 con Turno (turno_id UNIQUE):
+//  un turno completado tiene exactamente un cobro (RN-28).
+// ------------------------------------------------------------
+model Cobro {
+  id                      String    @id @default(uuid()) @db.Uuid
+  turnoId                 String    @unique @map("turno_id") @db.Uuid
+  fechaHora               DateTime  @default(now()) @map("fecha_hora")
+  importeSugerido         Decimal?  @map("importe_sugerido") @db.Decimal(10, 2) // null si hubo servicios "a consultar" sin precio (RN-29)
+  importe                 Decimal   @db.Decimal(10, 2) // > 0 (RN-29)
+  medioPago               MedioPago @map("medio_pago") // RN-27
+  transferenciaVerificada Boolean   @default(false) @map("transferencia_verificada")
+
+  turno Turno @relation(fields: [turnoId], references: [id])
+
+  // Las consultas de cobros filtran por período (RF-11.5).
+  @@index([fechaHora])
+  @@map("cobro")
+}
+
+// ------------------------------------------------------------
+//  TIPO_NOTIFICACION
+//  Catálogo: RECORDATORIO, SEGUIMIENTO, CUMPLEANIOS.
+//  Guarda la plantilla base de cada tipo de mensaje.
+// ------------------------------------------------------------
+model TipoNotificacion {
+  id               String @id @default(uuid()) @db.Uuid
+  codigo           String @unique
+  nombre           String
+  plantillaMensaje String @map("plantilla_mensaje")
+
+  notificaciones Notificacion[]
+
+  @@map("tipo_notificacion")
+}
+
+// ------------------------------------------------------------
+//  NOTIFICACION
+//  Mensaje pre-cargado que el sistema genera y la profesional
+//  envía por WhatsApp (esquema híbrido, RE-05).
+//  turno_id es opcional: los saludos de cumpleaños no tienen turno.
+// ------------------------------------------------------------
+model Notificacion {
+  id                 String             @id @default(uuid()) @db.Uuid
+  clienteId          String             @map("cliente_id") @db.Uuid
+  turnoId            String?            @map("turno_id") @db.Uuid
+  tipoNotificacionId String             @map("tipo_notificacion_id") @db.Uuid
+  mensaje            String
+  estado             EstadoNotificacion @default(PENDIENTE)
+  fechaGenerada      DateTime           @default(now()) @map("fecha_generada")
+  fechaProgramada    DateTime           @map("fecha_programada")
+  fechaEnvio         DateTime?          @map("fecha_envio")
+
+  cliente          Cliente          @relation(fields: [clienteId], references: [id])
+  turno            Turno?           @relation(fields: [turnoId], references: [id], onDelete: Cascade)
+  tipoNotificacion TipoNotificacion @relation(fields: [tipoNotificacionId], references: [id])
+
+  // Un turno no recibe dos notificaciones del mismo tipo (ej: dos recordatorios).
+  @@unique([turnoId, tipoNotificacionId])
+  // El panel lista las pendientes ordenadas por fecha programada.
+  @@index([estado, fechaProgramada])
+  @@map("notificacion")
 }
