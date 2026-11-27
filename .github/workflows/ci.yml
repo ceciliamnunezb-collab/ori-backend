@@ -1,0 +1,41 @@
+# Integración continua de Ori.
+# Corre en cada pull request y en cada push a main. Si algún paso falla,
+# el check queda en rojo y (con la regla de protección de main) no se puede mergear.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    # Prisma necesita la variable para leer prisma.config.ts.
+    # Para generar el cliente no se conecta a ninguna base: alcanza con un valor de ejemplo.
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ori
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      - name: Chequeo de tipos
+        run: npm run typecheck
+
+      - name: Pruebas unitarias
+        run: npm test
+
+      - name: Compilar
+        run: npm run build
