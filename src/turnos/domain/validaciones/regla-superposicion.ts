@@ -15,6 +15,7 @@ export class ReglaSuperposicion implements ReglaValidacion {
       turno.getProfesionalId,
       turno.getFechaHora,
       turno.getDuracionMin,
+      turno.getId, // al revalidar un turno existente, no se cuenta a sí mismo
     );
 
     // ¿Cuántos turnos cabrían contando el nuevo?

@@ -27,4 +27,11 @@ export class Rechazado implements EstadoTurno {
   completar(_turno: Turno): void {
     throw new TransicionInvalidaError('completar', this.nombre());
   }
+
+  registrarInasistencia(_turno: Turno): void {
+    throw new TransicionInvalidaError(
+      'registrar la inasistencia de',
+      this.nombre(),
+    );
+  }
 }

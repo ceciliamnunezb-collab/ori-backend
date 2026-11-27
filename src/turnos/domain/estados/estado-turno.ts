@@ -7,5 +7,7 @@ export interface EstadoTurno {
   cancelar(turno: Turno): void;
   rechazar(turno: Turno): void;
   completar(turno: Turno): void;
+  // Iteración 2: el cliente no se presentó (RN-31)
+  registrarInasistencia(turno: Turno): void;
   nombre(): string;
 }

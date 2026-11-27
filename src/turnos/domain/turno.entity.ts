@@ -1,5 +1,6 @@
 // src/turnos/domain/turno.entity.ts
 import { EstadoTurno } from './estados/estado-turno';
+import { DetalleTurno } from './detalle-turno';
 
 export class Turno {
   private id: string;
@@ -9,6 +10,9 @@ export class Turno {
   private duracionMin: number;
   private estado: EstadoTurno;
   private observaciones?: string;
+  // Iteración 2
+  private requiereSeguimiento: boolean;
+  private detalles: DetalleTurno[];
 
   constructor(params: {
     id: string;
@@ -18,6 +22,8 @@ export class Turno {
     duracionMin: number;
     estado: EstadoTurno;
     observaciones?: string;
+    requiereSeguimiento?: boolean;
+    detalles?: DetalleTurno[];
   }) {
     this.id = params.id;
     this.profesionalId = params.profesionalId;
@@ -26,6 +32,8 @@ export class Turno {
     this.duracionMin = params.duracionMin;
     this.estado = params.estado;
     this.observaciones = params.observaciones;
+    this.requiereSeguimiento = params.requiereSeguimiento ?? false;
+    this.detalles = params.detalles ?? [];
   }
 
   // --- Operaciones del ciclo de vida: el Turno DELEGA en su estado ---
@@ -50,6 +58,11 @@ export class Turno {
     this.estado.completar(this);
   }
 
+  // Iteración 2 (RN-31)
+  registrarInasistencia(): void {
+    this.estado.registrarInasistencia(this);
+  }
+
   // --- Métodos que los estados usan para mutar el turno ---
 
   cambiarEstado(nuevoEstado: EstadoTurno): void {
@@ -58,6 +71,18 @@ export class Turno {
 
   asignarFecha(nuevaFecha: Date): void {
     this.fechaHora = nuevaFecha;
+  }
+
+  // --- Iteración 2: cierre del turno ---
+
+  // RN-26: el turno solo puede cerrarse cuando su horario de inicio ya llegó.
+  haComenzado(ahora: Date): boolean {
+    return this.fechaHora.getTime() <= ahora.getTime();
+  }
+
+  // RN-22: al completar, la profesional indica si requiere seguimiento.
+  indicarSeguimiento(requiere: boolean): void {
+    this.requiereSeguimiento = requiere;
   }
 
   // --- Getters de lectura ---
@@ -90,4 +115,31 @@ export class Turno {
     return this.observaciones;
   }
 
+  get getRequiereSeguimiento(): boolean {
+    return this.requiereSeguimiento;
+  }
+
+  get getDetalles(): DetalleTurno[] {
+    return [...this.detalles];
+  }
+
+  // Vista plana para respuestas HTTP (evita serializar el objeto estado).
+  aVista() {
+    return {
+      id: this.id,
+      profesionalId: this.profesionalId,
+      clienteId: this.clienteId,
+      fechaHora: this.fechaHora,
+      duracionMin: this.duracionMin,
+      estado: this.nombreEstado,
+      observaciones: this.observaciones ?? null,
+      requiereSeguimiento: this.requiereSeguimiento,
+      servicios: this.detalles.map((d) => ({
+        servicioId: d.servicioId,
+        nombre: d.nombreServicio,
+        duracionAplicadaMin: d.duracionAplicadaMin,
+        precioAplicado: d.getPrecioAplicado,
+      })),
+    };
+  }
 }

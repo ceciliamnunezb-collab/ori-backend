@@ -8,4 +8,7 @@ export interface CrearTurnoCommand {
   fechaHora: Date;
   duracionMin: number;
   observaciones?: string;
+  // Iteración 2 (multi-servicio, RN-14): si se informan servicios,
+  // la duración del turno se calcula como la suma de sus duraciones.
+  servicioIds?: string[];
 }
