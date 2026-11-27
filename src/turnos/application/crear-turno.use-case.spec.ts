@@ -12,6 +12,7 @@ import {
   IServicioRepository,
   DatosServicio,
 } from '../domain/puertos/servicio-repository.port';
+import { IDisponibilidadRepository } from '../domain/puertos/disponibilidad-repository.port';
 
 class TurnoRepoMock implements ITurnoRepository {
   public guardados: Turno[] = [];
@@ -28,6 +29,20 @@ class TurnoRepoMock implements ITurnoRepository {
   async actualizar() {}
   async buscarConfirmadosEntre() {
     return [];
+  }
+}
+
+// Simula la configuración del profesional (PROFESIONAL.max_turnos_simultaneos)
+class DisponibilidadRepoMock implements IDisponibilidadRepository {
+  constructor(private max = 2) {}
+  async buscarFranjas() {
+    return [];
+  }
+  async buscarBloqueos() {
+    return [];
+  }
+  async obtenerMaxSimultaneos() {
+    return this.max;
   }
 }
 
@@ -59,7 +74,7 @@ describe('CrearTurnoUseCase', () => {
     const validador = new ValidadorTurno([
       new ReglaFechaNoPasada(),
       new ReglaVentanaReserva(30),
-      new ReglaSuperposicion(repo, 2),
+      new ReglaSuperposicion(repo, new DisponibilidadRepoMock(2)),
     ]);
     const r = await new CrearTurnoUseCase(
       validador,
@@ -130,5 +145,36 @@ describe('CrearTurnoUseCase', () => {
     );
     const r = await uc.ejecutar({ ...base, servicioIds: ['no-existe'] });
     expect(r.exito).toBe(false);
+  });
+
+  // RN-03 / RF-02.4: el máximo sale de la configuración del profesional
+  it('CASO 5: con máximo configurado en 1 y un turno solapado -> falla', async () => {
+    const yaAgendado = {} as Turno; // solo importa cuántos solapados hay
+    const repo = new TurnoRepoMock([yaAgendado]);
+    const validador = new ValidadorTurno([
+      new ReglaSuperposicion(repo, new DisponibilidadRepoMock(1)),
+    ]);
+    const r = await new CrearTurnoUseCase(
+      validador,
+      repo,
+      new ServicioRepoMock(),
+    ).ejecutar(base);
+    expect(r.exito).toBe(false);
+    expect(r.errores.join(' ')).toContain('máximo de 1');
+    expect(repo.guardados).toHaveLength(0);
+  });
+
+  it('CASO 6: con máximo configurado en 2 y un turno solapado -> se guarda', async () => {
+    const repo = new TurnoRepoMock([{} as Turno]);
+    const validador = new ValidadorTurno([
+      new ReglaSuperposicion(repo, new DisponibilidadRepoMock(2)),
+    ]);
+    const r = await new CrearTurnoUseCase(
+      validador,
+      repo,
+      new ServicioRepoMock(),
+    ).ejecutar(base);
+    expect(r.exito).toBe(true);
+    expect(repo.guardados).toHaveLength(1);
   });
 });

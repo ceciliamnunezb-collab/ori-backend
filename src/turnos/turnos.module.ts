@@ -38,7 +38,7 @@ import { ReglaHorarioAlcanzado } from './domain/cierre/regla-horario-alcanzado';
         return new ValidadorTurno([
           new ReglaFechaNoPasada(),
           new ReglaVentanaReserva(30),
-          new ReglaSuperposicion(repoTurno, 2),
+          new ReglaSuperposicion(repoTurno, repoDisponibilidad),
           new ReglaDisponibilidad(repoDisponibilidad),
         ]);
       },
