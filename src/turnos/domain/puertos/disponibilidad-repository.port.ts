@@ -26,4 +26,7 @@ export interface IDisponibilidadRepository {
     profesionalId: string,
     fecha: Date,
   ): Promise<RangoBloqueo[]>;
+
+  // RF-02.4 / RN-03: máximo de turnos simultáneos que configuró el profesional
+  obtenerMaxSimultaneos(profesionalId: string): Promise<number>;
 }

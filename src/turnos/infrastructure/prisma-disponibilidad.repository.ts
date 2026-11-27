@@ -13,9 +13,7 @@ import {
 } from '../domain/puertos/disponibilidad-repository.port';
 
 @Injectable()
-export class PrismaDisponibilidadRepository
-  implements IDisponibilidadRepository
-{
+export class PrismaDisponibilidadRepository implements IDisponibilidadRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // Franjas en que el profesional atiende ese día de la semana (0=domingo … 6=sábado).
@@ -44,6 +42,16 @@ export class PrismaDisponibilidadRepository
     });
 
     return filas.map((fila) => this.bloqueoToDomain(fila));
+  }
+
+  // RF-02.4: capacidad configurada en PROFESIONAL.max_turnos_simultaneos.
+  // Si el profesional no existe, se toma 1 (sin superposición), igual que el default de la tabla.
+  async obtenerMaxSimultaneos(profesionalId: string): Promise<number> {
+    const profesional = await this.prisma.profesional.findUnique({
+      where: { id: profesionalId },
+      select: { maxTurnosSimultaneos: true },
+    });
+    return profesional?.maxTurnosSimultaneos ?? 1;
   }
 
   // --- Traductores: fila plana de Prisma -> tipo del puerto ---
